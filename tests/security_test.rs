@@ -143,11 +143,11 @@ fn test_create_request_signature_deterministic() {
 }
 
 #[test]
-fn test_create_request_signature_varies_with_method() {
+fn test_create_request_signature_varies_with_body() {
     let secret = b"webhook-secret";
-    let sig_post =
-        create_request_signature(secret, "POST", "/path", "{}", 1).unwrap();
-    let sig_get =
-        create_request_signature(secret, "GET", "/path", "{}", 1).unwrap();
-    assert_ne!(sig_post, sig_get);
+    let sig1 =
+        create_request_signature(secret, "POST", "/path", r#"{"a":1}"#, 1).unwrap();
+    let sig2 =
+        create_request_signature(secret, "POST", "/path", r#"{"b":2}"#, 1).unwrap();
+    assert_ne!(sig1, sig2);
 }
