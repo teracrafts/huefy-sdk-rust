@@ -18,19 +18,18 @@ pub fn sign_payload(secret: &[u8], payload: &[u8]) -> Result<String, String> {
     Ok(hex::encode(result.into_bytes()))
 }
 
-/// Creates a composite request signature from method, path, body, and
-/// timestamp.
+/// Creates a composite request signature from timestamp and body.
 ///
-/// The canonical string is `"{method}\n{path}\n{body}\n{timestamp}"`.
+/// The canonical string is `"{timestamp}.{body}"`.
 pub fn create_request_signature(
     secret: &[u8],
-    method: &str,
-    path: &str,
+    _method: &str,
+    _path: &str,
     body: &str,
     timestamp: u64,
 ) -> Result<String, String> {
-    let canonical = format!("{}\n{}\n{}\n{}", method, path, body, timestamp);
-    sign_payload(secret, canonical.as_bytes())
+    let message = format!("{}.{}", timestamp, body);
+    sign_payload(secret, message.as_bytes())
 }
 
 /// Verifies that `signature` matches the HMAC-SHA256 of `payload` under
@@ -100,8 +99,8 @@ mod tests {
     #[test]
     fn test_different_inputs_different_signatures() {
         let secret = b"webhook-secret";
-        let sig1 = create_request_signature(secret, "POST", "/api/v1/a", "{}", 1).unwrap();
-        let sig2 = create_request_signature(secret, "POST", "/api/v1/b", "{}", 1).unwrap();
+        let sig1 = create_request_signature(secret, "POST", "/api/v1/a", r#"{"a":1}"#, 1).unwrap();
+        let sig2 = create_request_signature(secret, "POST", "/api/v1/a", r#"{"b":2}"#, 1).unwrap();
         assert_ne!(sig1, sig2);
     }
 }
