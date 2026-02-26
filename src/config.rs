@@ -1,4 +1,4 @@
-use crate::errors::HuefyError;
+use crate::errors::{ErrorCode, HuefyError};
 use std::time::Duration;
 
 /// Configuration for retry behavior on failed requests.
@@ -63,6 +63,8 @@ pub struct HuefyConfig {
     pub circuit_breaker: CircuitBreakerConfig,
     /// Enable debug logging.
     pub debug: bool,
+    /// Enable sanitisation of sensitive data in error messages.
+    pub enable_error_sanitization: bool,
 }
 
 impl HuefyConfig {
@@ -81,6 +83,7 @@ pub struct HuefyConfigBuilder {
     retry: Option<RetryConfig>,
     circuit_breaker: Option<CircuitBreakerConfig>,
     debug: bool,
+    enable_error_sanitization: bool,
 }
 
 impl Default for HuefyConfigBuilder {
@@ -92,6 +95,7 @@ impl Default for HuefyConfigBuilder {
             retry: None,
             circuit_breaker: None,
             debug: false,
+            enable_error_sanitization: true,
         }
     }
 }
@@ -133,6 +137,12 @@ impl HuefyConfigBuilder {
         self
     }
 
+    /// Enables or disables sanitisation of sensitive data in error messages.
+    pub fn enable_error_sanitization(mut self, enable: bool) -> Self {
+        self.enable_error_sanitization = enable;
+        self
+    }
+
     /// Builds the [`HuefyConfig`].
     ///
     /// # Errors
@@ -142,11 +152,19 @@ impl HuefyConfigBuilder {
     pub fn build(self) -> Result<HuefyConfig, HuefyError> {
         let api_key = self.api_key.unwrap_or_default();
 
+        if api_key.is_empty() {
+            return Err(HuefyError::Validation {
+                message: "API key is required".to_string(),
+                code: ErrorCode::Validation,
+                field: Some("api_key".to_string()),
+            });
+        }
+
         let base_url = self.base_url.unwrap_or_else(|| {
             if std::env::var("HUEFY_MODE")
                 .unwrap_or_default()
                 .to_lowercase()
-                == "development"
+                == "local"
             {
                 "https://api.huefy.on/api/v1/sdk".to_string()
             } else {
@@ -154,13 +172,48 @@ impl HuefyConfigBuilder {
             }
         });
 
+        let timeout = self.timeout.unwrap_or(Duration::from_secs(30));
+        if timeout.is_zero() {
+            return Err(HuefyError::Validation {
+                message: "timeout must be > 0".to_string(),
+                code: ErrorCode::Validation,
+                field: Some("timeout".to_string()),
+            });
+        }
+
+        let retry = self.retry.unwrap_or_default();
+        if retry.initial_delay.is_zero() {
+            return Err(HuefyError::Validation {
+                message: "initial_delay must be > 0".to_string(),
+                code: ErrorCode::Validation,
+                field: Some("retry.initial_delay".to_string()),
+            });
+        }
+        if retry.max_delay < retry.initial_delay {
+            return Err(HuefyError::Validation {
+                message: "max_delay must be >= initial_delay".to_string(),
+                code: ErrorCode::Validation,
+                field: Some("retry.max_delay".to_string()),
+            });
+        }
+
+        let circuit_breaker = self.circuit_breaker.unwrap_or_default();
+        if circuit_breaker.reset_timeout.is_zero() {
+            return Err(HuefyError::Validation {
+                message: "reset_timeout must be > 0".to_string(),
+                code: ErrorCode::Validation,
+                field: Some("circuit_breaker.reset_timeout".to_string()),
+            });
+        }
+
         Ok(HuefyConfig {
             api_key,
             base_url,
-            timeout: self.timeout.unwrap_or(Duration::from_secs(30)),
-            retry: self.retry.unwrap_or_default(),
-            circuit_breaker: self.circuit_breaker.unwrap_or_default(),
+            timeout,
+            retry,
+            circuit_breaker,
             debug: self.debug,
+            enable_error_sanitization: self.enable_error_sanitization,
         })
     }
 }
