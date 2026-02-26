@@ -1,17 +1,7 @@
 use crate::config::HuefyConfig;
 use crate::errors::HuefyError;
 use crate::http::client::HttpClient;
-
-/// Response from the health check endpoint.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct HealthResponse {
-    /// The status of the API (e.g., "ok").
-    pub status: String,
-    /// The API version string.
-    pub version: String,
-    /// Server timestamp in milliseconds.
-    pub timestamp: u64,
-}
+use crate::models::email::HealthResponse;
 
 /// The main SDK client for interacting with the Huefy API.
 ///
@@ -34,6 +24,7 @@ impl HuefyClient {
         if config.api_key.is_empty() {
             return Err(HuefyError::Validation {
                 message: "API key is required".to_string(),
+                code: crate::errors::ErrorCode::Validation,
                 field: Some("api_key".to_string()),
             });
         }
@@ -70,12 +61,9 @@ mod tests {
 
     #[test]
     fn test_client_requires_api_key() {
-        let config = HuefyConfig::builder()
+        let result = HuefyConfig::builder()
             .api_key("")
-            .build()
-            .unwrap();
-
-        let result = HuefyClient::new(config);
+            .build();
         assert!(result.is_err());
     }
 }
