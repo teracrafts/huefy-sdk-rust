@@ -35,6 +35,7 @@ pub enum HuefyError {
     #[error("[{code}] Validation error: {message}")]
     Validation {
         message: String,
+        code: ErrorCode,
         field: Option<String>,
     },
 
@@ -44,6 +45,7 @@ pub enum HuefyError {
         message: String,
         code: ErrorCode,
         retry_after: Option<u64>,
+        request_id: Option<String>,
     },
 
     /// A server-side error (5xx).
@@ -52,6 +54,7 @@ pub enum HuefyError {
         message: String,
         code: ErrorCode,
         status_code: u16,
+        request_id: Option<String>,
     },
 
     /// The circuit breaker is open and rejecting requests.
@@ -78,7 +81,7 @@ impl HuefyError {
             Self::Network { code, .. } => *code,
             Self::Auth { code, .. } => *code,
             Self::Timeout { code, .. } => *code,
-            Self::Validation { .. } => ErrorCode::Validation,
+            Self::Validation { code, .. } => *code,
             Self::RateLimited { code, .. } => *code,
             Self::Server { code, .. } => *code,
             Self::CircuitBreakerOpen { code, .. } => *code,
@@ -104,6 +107,52 @@ impl HuefyError {
             | Self::Unknown { message, .. } => message,
         };
         sanitize_error_message(raw)
+    }
+
+    /// Returns a new error with the message sanitized (secrets redacted).
+    pub fn sanitized(self) -> Self {
+        match self {
+            Self::Network { message, code, source } => Self::Network {
+                message: sanitize_error_message(&message),
+                code,
+                source,
+            },
+            Self::Auth { message, code } => Self::Auth {
+                message: sanitize_error_message(&message),
+                code,
+            },
+            Self::Timeout { message, code, source } => Self::Timeout {
+                message: sanitize_error_message(&message),
+                code,
+                source,
+            },
+            Self::Validation { message, code, field } => Self::Validation {
+                message: sanitize_error_message(&message),
+                code,
+                field,
+            },
+            Self::RateLimited { message, code, retry_after, request_id } => Self::RateLimited {
+                message: sanitize_error_message(&message),
+                code,
+                retry_after,
+                request_id,
+            },
+            Self::Server { message, code, status_code, request_id } => Self::Server {
+                message: sanitize_error_message(&message),
+                code,
+                status_code,
+                request_id,
+            },
+            Self::CircuitBreakerOpen { message, code } => Self::CircuitBreakerOpen {
+                message: sanitize_error_message(&message),
+                code,
+            },
+            Self::Unknown { message, code, source } => Self::Unknown {
+                message: sanitize_error_message(&message),
+                code,
+                source,
+            },
+        }
     }
 
     // -- Convenience constructors --
@@ -133,6 +182,18 @@ impl HuefyError {
 
     /// Creates a [`HuefyError`] from an HTTP status code and body.
     pub fn from_status(status: u16, body: &str) -> Self {
+        Self::from_status_with_retry_after(status, body, None, None)
+    }
+
+    /// Creates a [`HuefyError`] from an HTTP status code, body, an
+    /// optional `Retry-After` header value (in seconds), and an optional
+    /// `X-Request-Id` header value.
+    pub fn from_status_with_retry_after(
+        status: u16,
+        body: &str,
+        retry_after: Option<u64>,
+        request_id: Option<String>,
+    ) -> Self {
         match status {
             401 => Self::Auth {
                 message: "Invalid or expired API key".to_string(),
@@ -144,16 +205,19 @@ impl HuefyError {
             },
             404 => Self::Validation {
                 message: "Resource not found".to_string(),
+                code: ErrorCode::Validation,
                 field: None,
             },
             422 => Self::Validation {
                 message: format!("Validation failed: {}", body),
+                code: ErrorCode::Validation,
                 field: None,
             },
             429 => Self::RateLimited {
                 message: "Rate limit exceeded".to_string(),
                 code: ErrorCode::RateLimited,
-                retry_after: None,
+                retry_after,
+                request_id,
             },
             500..=599 => Self::Server {
                 message: format!("Server error: {}", body),
@@ -163,6 +227,7 @@ impl HuefyError {
                     ErrorCode::ServerError
                 },
                 status_code: status,
+                request_id,
             },
             _ => Self::Unknown {
                 message: format!("Unexpected status {}: {}", status, body),
