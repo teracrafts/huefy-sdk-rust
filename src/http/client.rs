@@ -1,10 +1,10 @@
 use crate::config::HuefyConfig;
 use crate::errors::HuefyError;
 use crate::http::circuit_breaker::CircuitBreaker;
-use crate::http::retry::with_retry;
+use crate::http::retry::{parse_retry_after, with_retry};
 use crate::utils::version::SDK_VERSION;
 
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, RETRY_AFTER, USER_AGENT};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
@@ -17,6 +17,7 @@ pub struct HttpClient {
     api_key: String,
     circuit_breaker: Arc<CircuitBreaker>,
     max_retries: u32,
+    enable_error_sanitization: bool,
 }
 
 impl HttpClient {
@@ -52,6 +53,7 @@ impl HttpClient {
             api_key: config.api_key.clone(),
             circuit_breaker,
             max_retries: config.retry.max_retries,
+            enable_error_sanitization: config.enable_error_sanitization,
         })
     }
 
@@ -80,10 +82,13 @@ impl HttpClient {
         let body_json = match body {
             Some(b) => Some(serde_json::to_value(b).map_err(|e| HuefyError::Validation {
                 message: format!("Failed to serialize request body: {}", e),
+                code: crate::errors::ErrorCode::Validation,
                 field: None,
             })?),
             None => None,
         };
+
+        let sanitize = self.enable_error_sanitization;
 
         with_retry(self.max_retries, move || {
             let url = url.clone();
@@ -99,6 +104,7 @@ impl HttpClient {
                         .parse::<reqwest::Method>()
                         .map_err(|_| HuefyError::Validation {
                             message: format!("Invalid HTTP method: {}", method_clone),
+                            code: crate::errors::ErrorCode::Validation,
                             field: Some("method".to_string()),
                         })?;
 
@@ -109,22 +115,49 @@ impl HttpClient {
                         request = request.json(json);
                     }
 
-                    let response = request.send().await.map_err(HuefyError::from_reqwest)?;
+                    let response = request.send().await.map_err(|e| {
+                        let err = HuefyError::from_reqwest(e);
+                        if sanitize { err.sanitized() } else { err }
+                    })?;
                     let status = response.status().as_u16();
 
                     if status >= 400 {
+                        // Extract Retry-After header before consuming the body
+                        let retry_after_secs = response
+                            .headers()
+                            .get(RETRY_AFTER)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| parse_retry_after(v))
+                            .map(|d| d.as_secs());
+
+                        let request_id = response
+                            .headers()
+                            .get("x-request-id")
+                            .and_then(|v| v.to_str().ok())
+                            .map(String::from);
+
                         let body_text = response
                             .text()
                             .await
                             .unwrap_or_else(|_| String::from(""));
-                        return Err(HuefyError::from_status(status, &body_text));
+
+                        let err = HuefyError::from_status_with_retry_after(
+                            status,
+                            &body_text,
+                            retry_after_secs,
+                            request_id,
+                        );
+                        return Err(if sanitize { err.sanitized() } else { err });
                     }
 
                     let parsed: T =
-                        response.json().await.map_err(|e| HuefyError::Network {
-                            message: format!("Failed to parse response: {}", e),
-                            code: crate::errors::ErrorCode::Network,
-                            source: Some(Box::new(e)),
+                        response.json().await.map_err(|e| {
+                            let err = HuefyError::Network {
+                                message: format!("Failed to parse response: {}", e),
+                                code: crate::errors::ErrorCode::Network,
+                                source: Some(Box::new(e)),
+                            };
+                            if sanitize { err.sanitized() } else { err }
                         })?;
 
                     Ok(parsed)
