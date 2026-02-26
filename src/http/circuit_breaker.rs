@@ -21,6 +21,7 @@ struct Inner {
     failure_count: u32,
     success_count: u32,
     last_failure_time: Option<Instant>,
+    half_open_in_flight: u32,
 }
 
 /// A circuit breaker that monitors outbound request failures and temporarily
@@ -55,6 +56,7 @@ impl CircuitBreaker {
                 failure_count: 0,
                 success_count: 0,
                 last_failure_time: None,
+                half_open_in_flight: 0,
             }),
         }
     }
@@ -73,17 +75,33 @@ impl CircuitBreaker {
         Fut: Future<Output = Result<T, HuefyError>>,
     {
         // --- pre-check ---
-        {
-            let inner = self.inner.lock().unwrap();
+        let is_half_open = {
+            let mut inner = self.inner.lock().unwrap();
             let state = self.effective_state(&inner);
-            if state == CircuitState::Open {
-                return Err(HuefyError::CircuitBreakerOpen {
-                    message: "Circuit breaker is open -- requests are temporarily blocked"
-                        .to_string(),
-                    code: ErrorCode::CircuitBreakerOpen,
-                });
+            match state {
+                CircuitState::Open => {
+                    return Err(HuefyError::CircuitBreakerOpen {
+                        message:
+                            "Circuit breaker is open -- requests are temporarily blocked"
+                                .to_string(),
+                        code: ErrorCode::CircuitBreakerOpen,
+                    });
+                }
+                CircuitState::HalfOpen => {
+                    if inner.half_open_in_flight >= self.half_open_max_requests {
+                        return Err(HuefyError::CircuitBreakerOpen {
+                            message:
+                                "Circuit breaker is half-open -- too many in-flight probe requests"
+                                    .to_string(),
+                            code: ErrorCode::CircuitBreakerOpen,
+                        });
+                    }
+                    inner.half_open_in_flight += 1;
+                    true
+                }
+                CircuitState::Closed => false,
             }
-        }
+        };
 
         // --- execute ---
         let result = operation().await;
@@ -91,6 +109,9 @@ impl CircuitBreaker {
         // --- post-check ---
         {
             let mut inner = self.inner.lock().unwrap();
+            if is_half_open {
+                inner.half_open_in_flight = inner.half_open_in_flight.saturating_sub(1);
+            }
             match &result {
                 Ok(_) => self.on_success(&mut inner),
                 Err(e) if e.is_recoverable() => self.on_failure(&mut inner),
@@ -126,6 +147,7 @@ impl CircuitBreaker {
                 inner.failure_count = 0;
                 inner.success_count = 0;
                 inner.last_failure_time = None;
+                inner.half_open_in_flight = 0;
             }
         } else {
             inner.failure_count = 0;
@@ -141,6 +163,7 @@ impl CircuitBreaker {
             // Probe failed -- reopen.
             inner.state = CircuitState::Open;
             inner.success_count = 0;
+            inner.half_open_in_flight = 0;
         } else if inner.failure_count >= self.failure_threshold {
             inner.state = CircuitState::Open;
             inner.success_count = 0;
