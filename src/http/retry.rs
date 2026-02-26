@@ -2,6 +2,12 @@ use crate::errors::HuefyError;
 use std::future::Future;
 use std::time::Duration;
 
+/// Base delay in milliseconds for the first retry attempt.
+const BASE_DELAY_MS: u64 = 1000;
+
+/// Maximum delay in milliseconds between retry attempts.
+const MAX_DELAY_MS: u64 = 30_000;
+
 /// Executes an async operation with exponential backoff retry.
 ///
 /// The closure `operation` is called up to `max_retries + 1` times. Between
@@ -21,7 +27,17 @@ where
                 if !err.is_recoverable() || attempt == max_retries {
                     return Err(err);
                 }
-                let delay = calculate_delay(attempt);
+
+                // If the server sent a Retry-After value, honour it instead
+                // of the default exponential backoff.
+                let delay = match &err {
+                    HuefyError::RateLimited {
+                        retry_after: Some(secs),
+                        ..
+                    } => Duration::from_secs(*secs),
+                    _ => calculate_delay(attempt),
+                };
+
                 tokio::time::sleep(delay).await;
                 last_error = Some(err);
             }
@@ -40,10 +56,8 @@ where
 /// Uses exponential backoff with a random jitter of up to 20% of the base
 /// delay. The result is capped at 30 seconds.
 pub fn calculate_delay(attempt: u32) -> Duration {
-    let base_ms: u64 = 1000;
-    let exponential = base_ms.saturating_mul(2u64.saturating_pow(attempt));
-    let max_delay_ms: u64 = 30_000;
-    let capped = exponential.min(max_delay_ms);
+    let exponential = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
+    let capped = exponential.min(MAX_DELAY_MS);
 
     // Deterministic jitter: use attempt as a simple seed.
     let jitter_fraction = ((attempt as u64 * 7 + 3) % 20) as f64 / 100.0;
