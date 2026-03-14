@@ -63,7 +63,7 @@ impl CircuitBreaker {
 
     /// Returns the current [`CircuitState`].
     pub fn state(&self) -> CircuitState {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         self.effective_state(&inner)
     }
 
@@ -76,7 +76,7 @@ impl CircuitBreaker {
     {
         // --- pre-check ---
         let is_half_open = {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             let state = self.effective_state(&inner);
             match state {
                 CircuitState::Open => {
@@ -108,7 +108,7 @@ impl CircuitBreaker {
 
         // --- post-check ---
         {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             if is_half_open {
                 inner.half_open_in_flight = inner.half_open_in_flight.saturating_sub(1);
             }
