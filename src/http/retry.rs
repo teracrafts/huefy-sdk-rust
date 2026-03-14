@@ -1,4 +1,5 @@
 use crate::errors::HuefyError;
+use rand::Rng;
 use std::future::Future;
 use std::time::Duration;
 
@@ -59,11 +60,9 @@ pub fn calculate_delay(attempt: u32) -> Duration {
     let exponential = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
     let capped = exponential.min(MAX_DELAY_MS);
 
-    // Deterministic jitter: use attempt as a simple seed.
-    let jitter_fraction = ((attempt as u64 * 7 + 3) % 20) as f64 / 100.0;
-    let jitter = (capped as f64 * jitter_fraction) as u64;
-
-    Duration::from_millis(capped + jitter)
+    // Random jitter ±25% to prevent thundering herd. Result is capped at MAX_DELAY_MS.
+    let jitter_factor = 0.75 + rand::thread_rng().gen::<f64>() * 0.5;
+    Duration::from_millis(((capped as f64 * jitter_factor) as u64).min(MAX_DELAY_MS))
 }
 
 /// Parses a `Retry-After` header value into a `Duration`.
@@ -95,7 +94,7 @@ mod tests {
     #[test]
     fn test_calculate_delay_capped() {
         let d = calculate_delay(20);
-        assert!(d <= Duration::from_secs(36)); // 30s + max 20% jitter
+        assert!(d <= Duration::from_secs(30)); // capped at MAX_DELAY_MS
     }
 
     #[test]
