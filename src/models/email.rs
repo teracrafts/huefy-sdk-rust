@@ -24,9 +24,9 @@ impl std::fmt::Display for EmailProvider {
 
 /// Request to send a single email via the Huefy API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SendEmailRequest {
     /// The template key identifying the email template (1-100 characters).
-    #[serde(rename = "template_key")]
     pub template_key: String,
 
     /// The recipient email address.
@@ -36,68 +36,115 @@ pub struct SendEmailRequest {
     pub data: std::collections::HashMap<String, String>,
 
     /// The email provider to use. Defaults to SES if not specified.
-    #[serde(rename = "provider_type", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_type: Option<EmailProvider>,
+}
+
+/// Per-recipient status within a send-email or bulk response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipientStatus {
+    pub email: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sent_at: Option<String>,
+}
+
+/// Data payload within a send-email response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendEmailResponseData {
+    pub email_id: String,
+    pub status: String,
+    pub recipients: Vec<RecipientStatus>,
 }
 
 /// Response from the send email endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SendEmailResponse {
     /// Whether the email was sent successfully.
     pub success: bool,
 
-    /// A human-readable message from the server.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    /// Response data containing emailId, status, and per-recipient statuses.
+    pub data: SendEmailResponseData,
 
-    /// The unique identifier for the sent message.
-    #[serde(rename = "message_id", skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<String>,
-
-    /// The provider that was used to deliver the email.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
+    /// Correlation ID for tracing.
+    pub correlation_id: String,
 }
 
-/// Error details for a single email in a bulk operation.
+/// A recipient entry in a bulk email request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BulkEmailError {
-    /// Error message describing what went wrong.
-    pub message: String,
-
-    /// Error code string.
-    pub code: String,
-}
-
-/// Result of sending a single email in a bulk operation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BulkEmailResult {
-    /// The recipient email address.
+pub struct BulkRecipient {
     pub email: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub recipient_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
 
-    /// Whether this individual email was sent successfully.
+/// Request body for the send-bulk-emails endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendBulkEmailsRequest {
+    pub template_key: String,
+    pub recipients: Vec<BulkRecipient>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_size: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// Data payload within a send-bulk-emails response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendBulkEmailsResponseData {
+    pub batch_id: String,
+    pub status: String,
+    pub template_key: String,
+    pub total_recipients: i32,
+    pub success_count: i32,
+    pub failure_count: i32,
+    pub suppressed_count: i32,
+    pub started_at: String,
+    pub recipients: Vec<RecipientStatus>,
+}
+
+/// Response from the send-bulk-emails endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendBulkEmailsResponse {
     pub success: bool,
-
-    /// The response if the email was sent successfully.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<SendEmailResponse>,
-
-    /// The error if the email failed to send.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<BulkEmailError>,
+    pub data: SendBulkEmailsResponseData,
+    pub correlation_id: String,
 }
 
 /// Response from the health check endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthResponse {
-    /// The status of the API (e.g., "ok").
+#[serde(rename_all = "camelCase")]
+pub struct HealthResponseData {
     pub status: String,
+    pub timestamp: String,
+    pub version: String,
+}
 
-    /// Server timestamp.
-    #[serde(default)]
-    pub timestamp: Option<String>,
-
-    /// The API version string.
-    #[serde(default)]
-    pub version: Option<String>,
+/// Full envelope for the health check response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthResponse {
+    pub success: bool,
+    pub data: HealthResponseData,
+    pub correlation_id: String,
 }
