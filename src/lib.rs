@@ -16,7 +16,7 @@
 //!
 //!     let client = HuefyClient::new(config)?;
 //!     let health = client.health_check().await?;
-//!     println!("Status: {}", health.status);
+//!     println!("Status: {}", health.data.status);
 //!
 //!     Ok(())
 //! }
@@ -37,4 +37,8 @@ pub use client::HuefyClient;
 pub use config::{HuefyConfig, RetryConfig, CircuitBreakerConfig};
 pub use email_client::HuefyEmailClient;
 pub use errors::{HuefyError, ErrorCode};
-pub use models::email::{EmailProvider, SendEmailRequest, SendEmailResponse, BulkEmailResult, HealthResponse};
+pub use models::email::{
+    BulkRecipient, EmailProvider, HealthResponse, HealthResponseData, RecipientStatus,
+    SendBulkEmailsRequest, SendBulkEmailsResponse, SendBulkEmailsResponseData, SendEmailRequest,
+    SendEmailResponse, SendEmailResponseData,
+};
