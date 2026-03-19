@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-
 use crate::config::HuefyConfig;
 use crate::errors::HuefyError;
 use crate::http::client::HttpClient;
 use crate::models::email::{
-    BulkEmailError, BulkEmailResult, EmailProvider, HealthResponse, SendEmailRequest,
-    SendEmailResponse,
+    BulkRecipient, EmailProvider, HealthResponse, SendBulkEmailsRequest, SendBulkEmailsResponse,
+    SendEmailRequest, SendEmailResponse,
 };
 use crate::security::pii::detect_potential_pii;
 use crate::validators::email::{validate_bulk_count, validate_send_email_input};
+use std::collections::HashMap;
 
 /// Email-focused client for the Huefy SDK.
 ///
@@ -44,6 +43,7 @@ pub struct HuefyEmailClient {
 
 impl HuefyEmailClient {
     const EMAILS_SEND_PATH: &'static str = "/emails/send";
+    const EMAILS_SEND_BULK_PATH: &'static str = "/emails/send-bulk";
 
     /// Creates a new `HuefyEmailClient` from the provided configuration.
     ///
@@ -135,63 +135,44 @@ impl HuefyEmailClient {
         Ok(response)
     }
 
-    /// Sends multiple emails in bulk.
-    ///
-    /// Each request is sent independently. Failures for individual emails
-    /// do not prevent remaining emails from being sent.
+    /// Sends multiple emails in bulk via the send-bulk-emails endpoint.
     ///
     /// # Arguments
     ///
-    /// * `requests` - The list of email requests to send.
+    /// * `template_key` - The template key to use for all recipients.
+    /// * `recipients` - The list of recipients to send to.
     ///
     /// # Errors
     ///
     /// Returns [`HuefyError::Validation`] if the bulk count validation fails.
     pub async fn send_bulk_emails(
         &self,
-        requests: Vec<SendEmailRequest>,
-    ) -> Result<Vec<BulkEmailResult>, HuefyError> {
-        validate_bulk_count(requests.len()).map_err(|msg| HuefyError::Validation {
+        template_key: &str,
+        recipients: Vec<BulkRecipient>,
+    ) -> Result<SendBulkEmailsResponse, HuefyError> {
+        validate_bulk_count(recipients.len()).map_err(|msg| HuefyError::Validation {
             message: msg,
             code: crate::errors::ErrorCode::Validation,
             field: None,
         })?;
 
-        let mut results = Vec::with_capacity(requests.len());
+        let request = SendBulkEmailsRequest {
+            template_key: template_key.to_string(),
+            recipients,
+            from_email: None,
+            from_name: None,
+            provider_type: None,
+            batch_size: None,
+            correlation_id: None,
+            metadata: None,
+        };
 
-        for request in requests {
-            match self
-                .send_email(
-                    &request.template_key,
-                    request.data.clone(),
-                    &request.recipient,
-                    request.provider_type,
-                )
-                .await
-            {
-                Ok(response) => {
-                    results.push(BulkEmailResult {
-                        email: request.recipient,
-                        success: true,
-                        result: Some(response),
-                        error: None,
-                    });
-                }
-                Err(e) => {
-                    results.push(BulkEmailResult {
-                        email: request.recipient,
-                        success: false,
-                        result: None,
-                        error: Some(BulkEmailError {
-                            message: e.to_string(),
-                            code: e.error_code().to_string(),
-                        }),
-                    });
-                }
-            }
-        }
+        let response: SendBulkEmailsResponse = self
+            .http
+            .request("POST", Self::EMAILS_SEND_BULK_PATH, Some(&request))
+            .await?;
 
-        Ok(results)
+        Ok(response)
     }
 
     /// Performs a health check against the API.
