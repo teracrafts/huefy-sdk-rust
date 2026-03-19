@@ -1,5 +1,17 @@
 use crate::errors::{ErrorCode, HuefyError};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Parsed rate-limit header values from an API response.
+#[derive(Debug, Clone)]
+pub struct RateLimitInfo {
+    /// The request limit as reported by the server.
+    pub limit: u32,
+    /// The number of remaining requests in the current window.
+    pub remaining: u32,
+    /// The time at which the current rate-limit window resets.
+    pub reset_at: SystemTime,
+}
 
 /// Configuration for retry behavior on failed requests.
 #[derive(Debug, Clone)]
@@ -49,7 +61,6 @@ impl Default for CircuitBreakerConfig {
 /// Primary configuration for the Huefy SDK client.
 ///
 /// Use [`HuefyConfig::builder`] for ergonomic construction.
-#[derive(Debug, Clone)]
 pub struct HuefyConfig {
     /// API key used for authentication.
     pub api_key: String,
@@ -65,6 +76,10 @@ pub struct HuefyConfig {
     pub debug: bool,
     /// Enable sanitisation of sensitive data in error messages.
     pub enable_error_sanitization: bool,
+    /// Optional callback invoked with rate-limit info after every successful response.
+    pub on_rate_limit_update: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
+    /// Optional callback invoked when remaining requests drop below 20% of the limit.
+    pub on_rate_limit_warning: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
 }
 
 impl HuefyConfig {
@@ -75,7 +90,6 @@ impl HuefyConfig {
 }
 
 /// Builder for [`HuefyConfig`].
-#[derive(Debug)]
 pub struct HuefyConfigBuilder {
     api_key: Option<String>,
     base_url: Option<String>,
@@ -84,6 +98,8 @@ pub struct HuefyConfigBuilder {
     circuit_breaker: Option<CircuitBreakerConfig>,
     debug: bool,
     enable_error_sanitization: bool,
+    on_rate_limit_update: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
+    on_rate_limit_warning: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
 }
 
 impl Default for HuefyConfigBuilder {
@@ -96,6 +112,8 @@ impl Default for HuefyConfigBuilder {
             circuit_breaker: None,
             debug: false,
             enable_error_sanitization: true,
+            on_rate_limit_update: None,
+            on_rate_limit_warning: None,
         }
     }
 }
@@ -140,6 +158,24 @@ impl HuefyConfigBuilder {
     /// Enables or disables sanitisation of sensitive data in error messages.
     pub fn enable_error_sanitization(mut self, enable: bool) -> Self {
         self.enable_error_sanitization = enable;
+        self
+    }
+
+    /// Sets a callback invoked with rate-limit info after every successful response.
+    pub fn on_rate_limit_update<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&RateLimitInfo) + Send + Sync + 'static,
+    {
+        self.on_rate_limit_update = Some(Arc::new(f));
+        self
+    }
+
+    /// Sets a callback invoked when remaining requests drop below 20% of the limit.
+    pub fn on_rate_limit_warning<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&RateLimitInfo) + Send + Sync + 'static,
+    {
+        self.on_rate_limit_warning = Some(Arc::new(f));
         self
     }
 
@@ -214,6 +250,8 @@ impl HuefyConfigBuilder {
             circuit_breaker,
             debug: self.debug,
             enable_error_sanitization: self.enable_error_sanitization,
+            on_rate_limit_update: self.on_rate_limit_update,
+            on_rate_limit_warning: self.on_rate_limit_warning,
         })
     }
 }
