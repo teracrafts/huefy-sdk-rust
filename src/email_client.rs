@@ -6,7 +6,7 @@ use crate::models::email::{
     SendEmailRequest, SendEmailResponse,
 };
 use crate::security::pii::detect_potential_pii;
-use crate::validators::email::{validate_bulk_count, validate_send_email_input};
+use crate::validators::email::{validate_bulk_count, validate_email, validate_send_email_input};
 use std::collections::HashMap;
 
 /// Email-focused client for the Huefy SDK.
@@ -155,6 +155,14 @@ impl HuefyEmailClient {
             code: crate::errors::ErrorCode::Validation,
             field: None,
         })?;
+
+        for (i, r) in recipients.iter().enumerate() {
+            validate_email(&r.email).map_err(|msg| HuefyError::Validation {
+                message: format!("recipients[{}]: {}", i, msg),
+                code: crate::errors::ErrorCode::Validation,
+                field: None,
+            })?;
+        }
 
         let request = SendBulkEmailsRequest {
             template_key: template_key.to_string(),
