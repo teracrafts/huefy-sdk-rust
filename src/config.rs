@@ -30,8 +30,8 @@ impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             max_retries: 3,
-            initial_delay: Duration::from_millis(1000),
-            max_delay: Duration::from_secs(30),
+            initial_delay: Duration::from_millis(500),
+            max_delay: Duration::from_secs(10),
             backoff_multiplier: 2.0,
         }
     }
