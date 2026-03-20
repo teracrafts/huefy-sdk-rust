@@ -4,10 +4,10 @@ use std::future::Future;
 use std::time::Duration;
 
 /// Base delay in milliseconds for the first retry attempt.
-const BASE_DELAY_MS: u64 = 1000;
+const BASE_DELAY_MS: u64 = 500;
 
 /// Maximum delay in milliseconds between retry attempts.
-const MAX_DELAY_MS: u64 = 30_000;
+const MAX_DELAY_MS: u64 = 10_000;
 
 /// Executes an async operation with exponential backoff retry.
 ///
@@ -60,8 +60,8 @@ pub fn calculate_delay(attempt: u32) -> Duration {
     let exponential = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
     let capped = exponential.min(MAX_DELAY_MS);
 
-    // Random jitter ±25% to prevent thundering herd. Result is capped at MAX_DELAY_MS.
-    let jitter_factor = 0.75 + rand::thread_rng().gen::<f64>() * 0.5;
+    // Random jitter ±20% to prevent thundering herd. Result is capped at MAX_DELAY_MS.
+    let jitter_factor = 0.8 + rand::thread_rng().gen::<f64>() * 0.4;
     Duration::from_millis(((capped as f64 * jitter_factor) as u64).min(MAX_DELAY_MS))
 }
 
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_calculate_delay_capped() {
         let d = calculate_delay(20);
-        assert!(d <= Duration::from_secs(30)); // capped at MAX_DELAY_MS
+        assert!(d <= Duration::from_secs(12)); // capped at MAX_DELAY_MS (10s) + max jitter (×1.2)
     }
 
     #[test]
