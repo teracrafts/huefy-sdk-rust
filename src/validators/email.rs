@@ -9,7 +9,7 @@ pub const MAX_EMAIL_LENGTH: usize = 254;
 pub const MAX_TEMPLATE_KEY_LENGTH: usize = 100;
 
 /// Maximum number of emails in a single bulk request.
-pub const MAX_BULK_EMAILS: usize = 100;
+pub const MAX_BULK_EMAILS: usize = 1000;
 
 static EMAIL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap());
@@ -175,12 +175,12 @@ mod tests {
 
     #[test]
     fn test_validate_bulk_count_over_limit() {
-        assert!(validate_bulk_count(101).is_err());
+        assert!(validate_bulk_count(1001).is_err());
     }
 
     #[test]
     fn test_validate_bulk_count_at_limit() {
-        assert!(validate_bulk_count(100).is_ok());
+        assert!(validate_bulk_count(1000).is_ok());
     }
 
     #[test]
