@@ -2,12 +2,11 @@ use crate::config::HuefyConfig;
 use crate::errors::HuefyError;
 use crate::http::client::HttpClient;
 use crate::models::email::{
-    BulkRecipient, EmailProvider, HealthResponse, SendBulkEmailsRequest, SendBulkEmailsResponse,
+    HealthResponse, SendBulkEmailsRequest, SendBulkEmailsResponse,
     SendEmailRequest, SendEmailResponse,
 };
 use crate::security::pii::detect_potential_pii;
 use crate::validators::email::{validate_bulk_count, validate_email, validate_send_email_input};
-use std::collections::HashMap;
 
 /// Email-focused client for the Huefy SDK.
 ///
@@ -19,6 +18,8 @@ use std::collections::HashMap;
 /// ```rust,no_run
 /// use huefy::email_client::HuefyEmailClient;
 /// use huefy::config::HuefyConfig;
+/// use huefy::models::email::SendEmailRequest;
+/// use std::collections::HashMap;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = HuefyConfig::builder()
@@ -27,10 +28,15 @@ use std::collections::HashMap;
 ///
 /// let client = HuefyEmailClient::new(config)?;
 ///
-/// let mut data = std::collections::HashMap::new();
+/// let mut data = HashMap::new();
 /// data.insert("name".to_string(), "John".to_string());
 ///
-/// let response = client.send_email("welcome", data, "john@example.com", None).await?;
+/// let response = client.send_email(SendEmailRequest {
+///     template_key: "welcome".to_string(),
+///     data,
+///     recipient: "john@example.com".to_string(),
+///     provider_type: None,
+/// }).await?;
 /// println!("Success: {}", response.success);
 /// # Ok(())
 /// # }
@@ -69,10 +75,7 @@ impl HuefyEmailClient {
     ///
     /// # Arguments
     ///
-    /// * `template_key` - The template key identifying the email template.
-    /// * `data` - Template data variables to merge into the email.
-    /// * `recipient` - The recipient email address.
-    /// * `provider` - The email provider to use. Pass `None` for the default (SES).
+    /// * `request` - A [`SendEmailRequest`] containing templateKey, data, recipient, and optional provider.
     ///
     /// # Errors
     ///
@@ -80,12 +83,9 @@ impl HuefyEmailClient {
     /// another [`HuefyError`] variant on network failures.
     pub async fn send_email(
         &self,
-        template_key: &str,
-        data: HashMap<String, String>,
-        recipient: &str,
-        provider: Option<EmailProvider>,
+        request: SendEmailRequest,
     ) -> Result<SendEmailResponse, HuefyError> {
-        let errors = validate_send_email_input(template_key, Some(&data), recipient);
+        let errors = validate_send_email_input(&request.template_key, Some(&request.data), &request.recipient);
 
         if !errors.is_empty() {
             return Err(HuefyError::Validation {
@@ -96,7 +96,7 @@ impl HuefyEmailClient {
         }
 
         // Warn if template data contains fields that look like PII
-        let pii_fields: Vec<(&str, &str)> = data
+        let pii_fields: Vec<(&str, &str)> = request.data
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
@@ -121,10 +121,10 @@ impl HuefyEmailClient {
         }
 
         let request = SendEmailRequest {
-            template_key: template_key.trim().to_string(),
-            recipient: recipient.trim().to_string(),
-            data,
-            provider_type: provider,
+            template_key: request.template_key.trim().to_string(),
+            data: request.data,
+            recipient: request.recipient.trim().to_string(),
+            provider_type: request.provider_type,
         };
 
         let response: SendEmailResponse = self
@@ -139,41 +139,28 @@ impl HuefyEmailClient {
     ///
     /// # Arguments
     ///
-    /// * `template_key` - The template key to use for all recipients.
-    /// * `recipients` - The list of recipients to send to.
+    /// * `request` - A [`SendBulkEmailsRequest`] containing templateKey, recipients, and optional provider.
     ///
     /// # Errors
     ///
     /// Returns [`HuefyError::Validation`] if the bulk count validation fails.
     pub async fn send_bulk_emails(
         &self,
-        template_key: &str,
-        recipients: Vec<BulkRecipient>,
+        request: SendBulkEmailsRequest,
     ) -> Result<SendBulkEmailsResponse, HuefyError> {
-        validate_bulk_count(recipients.len()).map_err(|msg| HuefyError::Validation {
+        validate_bulk_count(request.recipients.len()).map_err(|msg| HuefyError::Validation {
             message: msg,
             code: crate::errors::ErrorCode::Validation,
             field: None,
         })?;
 
-        for (i, r) in recipients.iter().enumerate() {
+        for (i, r) in request.recipients.iter().enumerate() {
             validate_email(&r.email).map_err(|msg| HuefyError::Validation {
                 message: format!("recipients[{}]: {}", i, msg),
                 code: crate::errors::ErrorCode::Validation,
                 field: None,
             })?;
         }
-
-        let request = SendBulkEmailsRequest {
-            template_key: template_key.to_string(),
-            recipients,
-            from_email: None,
-            from_name: None,
-            provider_type: None,
-            batch_size: None,
-            correlation_id: None,
-            metadata: None,
-        };
 
         let response: SendBulkEmailsResponse = self
             .http
@@ -204,10 +191,82 @@ impl HuefyEmailClient {
 mod tests {
     use super::*;
     use crate::config::HuefyConfig;
+    use crate::models::email::{BulkRecipient, SendBulkEmailsRequest, SendEmailRequest};
+    use std::collections::HashMap;
+
+    fn make_client() -> HuefyEmailClient {
+        let config = HuefyConfig::builder()
+            .api_key("sdk_test_key")
+            .build()
+            .expect("valid config");
+        HuefyEmailClient::new(config).expect("valid client")
+    }
 
     #[test]
     fn test_email_client_requires_api_key() {
         let result = HuefyConfig::builder().api_key("").build();
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_send_email_rejects_empty_template_key() {
+        let client = make_client();
+        let result = client
+            .send_email(SendEmailRequest {
+                template_key: "".to_string(),
+                data: HashMap::new(),
+                recipient: "john@example.com".to_string(),
+                provider_type: None,
+            })
+            .await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Validation"));
+    }
+
+    #[tokio::test]
+    async fn test_send_email_rejects_invalid_recipient() {
+        let client = make_client();
+        let result = client
+            .send_email(SendEmailRequest {
+                template_key: "welcome".to_string(),
+                data: HashMap::new(),
+                recipient: "not-an-email".to_string(),
+                provider_type: None,
+            })
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_send_bulk_emails_rejects_empty_recipients() {
+        let client = make_client();
+        let result = client
+            .send_bulk_emails(SendBulkEmailsRequest {
+                template_key: "welcome".to_string(),
+                recipients: vec![],
+                provider_type: None,
+            })
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_send_bulk_emails_rejects_invalid_email() {
+        let client = make_client();
+        let result = client
+            .send_bulk_emails(SendBulkEmailsRequest {
+                template_key: "welcome".to_string(),
+                recipients: vec![BulkRecipient {
+                    email: "not-valid".to_string(),
+                    recipient_type: None,
+                    data: None,
+                }],
+                provider_type: None,
+            })
+            .await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("recipients[0]"));
     }
 }
