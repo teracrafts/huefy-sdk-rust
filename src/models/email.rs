@@ -29,11 +29,11 @@ pub struct SendEmailRequest {
     /// The template key identifying the email template (1-100 characters).
     pub template_key: String,
 
-    /// The recipient email address.
-    pub recipient: String,
-
     /// Template data variables to merge into the email.
     pub data: std::collections::HashMap<String, String>,
+
+    /// The recipient email address.
+    pub recipient: String,
 
     /// The email provider to use. Defaults to SES if not specified.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -94,17 +94,7 @@ pub struct SendBulkEmailsRequest {
     pub template_key: String,
     pub recipients: Vec<BulkRecipient>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub from_email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub from_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provider_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_size: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub correlation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
+    pub provider_type: Option<EmailProvider>,
 }
 
 /// Data payload within a send-bulk-emails response.
