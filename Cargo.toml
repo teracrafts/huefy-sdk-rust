@@ -2,6 +2,7 @@
 name = "huefy"
 version = "1.0.0"
 edition = "2021"
+rust-version = "1.75"
 description = "Huefy - Official Rust SDK"
 license = "MIT"
 repository = "https://github.com/teracrafts/huefy"

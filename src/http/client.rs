@@ -109,13 +109,13 @@ impl HttpClient {
 
             async move {
                 cb.execute(|| async {
-                    let req_method = method_clone
-                        .parse::<reqwest::Method>()
-                        .map_err(|_| HuefyError::Validation {
+                    let req_method = method_clone.parse::<reqwest::Method>().map_err(|_| {
+                        HuefyError::Validation {
                             message: format!("Invalid HTTP method: {}", method_clone),
                             code: crate::errors::ErrorCode::Validation,
                             field: Some("method".to_string()),
-                        })?;
+                        }
+                    })?;
 
                     let mut request = client.request(req_method, &url);
                     request = request.header("X-API-Key", &api_key);
@@ -126,7 +126,11 @@ impl HttpClient {
 
                     let response = request.send().await.map_err(|e| {
                         let err = HuefyError::from_reqwest(e);
-                        if sanitize { err.sanitized() } else { err }
+                        if sanitize {
+                            err.sanitized()
+                        } else {
+                            err
+                        }
                     })?;
                     let status = response.status().as_u16();
 
@@ -145,10 +149,7 @@ impl HttpClient {
                             .and_then(|v| v.to_str().ok())
                             .map(String::from);
 
-                        let body_text = response
-                            .text()
-                            .await
-                            .unwrap_or_else(|_| String::from(""));
+                        let body_text = response.text().await.unwrap_or_else(|_| String::from(""));
 
                         let err = HuefyError::from_status_with_retry_after(
                             status,
@@ -161,15 +162,18 @@ impl HttpClient {
 
                     let headers = response.headers().clone();
 
-                    let parsed: T =
-                        response.json().await.map_err(|e| {
-                            let err = HuefyError::Network {
-                                message: format!("Failed to parse response: {}", e),
-                                code: crate::errors::ErrorCode::Network,
-                                source: Some(Box::new(e)),
-                            };
-                            if sanitize { err.sanitized() } else { err }
-                        })?;
+                    let parsed: T = response.json().await.map_err(|e| {
+                        let err = HuefyError::Network {
+                            message: format!("Failed to parse response: {}", e),
+                            code: crate::errors::ErrorCode::Network,
+                            source: Some(Box::new(e)),
+                        };
+                        if sanitize {
+                            err.sanitized()
+                        } else {
+                            err
+                        }
+                    })?;
 
                     parse_rate_limit_headers(
                         &headers,
@@ -206,7 +210,11 @@ fn parse_rate_limit_headers(
 
     if let (Some(limit), Some(remaining), Some(reset_secs)) = (limit, remaining, reset_secs) {
         let reset_at = UNIX_EPOCH + Duration::from_secs(reset_secs);
-        let info = RateLimitInfo { limit, remaining, reset_at };
+        let info = RateLimitInfo {
+            limit,
+            remaining,
+            reset_at,
+        };
 
         if let Some(f) = on_update {
             f(&info);

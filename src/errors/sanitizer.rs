@@ -10,10 +10,7 @@ static SANITIZE_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
             "$1=[REDACTED]",
         ),
         // Bearer tokens
-        (
-            Regex::new(r"(?i)(bearer\s+)\S+").unwrap(),
-            "$1[REDACTED]",
-        ),
+        (Regex::new(r"(?i)(bearer\s+)\S+").unwrap(), "$1[REDACTED]"),
         // Authorization headers
         (
             Regex::new(r"(?i)(authorization)[=:\s]+\S+").unwrap(),

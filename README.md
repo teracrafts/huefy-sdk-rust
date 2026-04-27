@@ -20,29 +20,34 @@ tokio = { version = "1", features = ["full"] }
 ## Quick Start
 
 ```rust
-use huefy::{HuefyEmailClient, HuefyConfig, SendEmailRequest, Recipient};
+use huefy::{HuefyConfig, HuefyEmailClient, SendEmailRecipient, SendEmailRecipientRequest};
+use serde_json::json;
+use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = HuefyEmailClient::new(HuefyConfig {
-        api_key: "sdk_your_api_key".to_string(),
-        ..Default::default()
-    })?;
+    let config = HuefyConfig::builder()
+        .api_key("sdk_your_api_key")
+        .build()?;
+    let client = HuefyEmailClient::new(config)?;
 
-    let response = client.send_email(SendEmailRequest {
+    let data = HashMap::from([
+        ("firstName".to_string(), json!("Alice")),
+        ("trialDays".to_string(), json!(14)),
+    ]);
+
+    let response = client.send_email(SendEmailRecipientRequest {
         template_key: "welcome-email".to_string(),
-        recipient: Recipient {
+        recipient: SendEmailRecipient {
             email: "alice@example.com".to_string(),
-            name: Some("Alice".to_string()),
+            recipient_type: Some("cc".to_string()),
+            data: Some(json!({ "locale": "en" })),
         },
-        variables: Some([
-            ("firstName".to_string(), "Alice".into()),
-            ("trialDays".to_string(), 14.into()),
-        ].into()),
-        ..Default::default()
+        data,
+        provider_type: None,
     }).await?;
 
-    println!("Message ID: {}", response.message_id);
+    println!("Message ID: {}", response.data.email_id);
     client.close();
     Ok(())
 }
@@ -81,24 +86,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Bulk Email
 
 ```rust
-use huefy::BulkEmailRequest;
+use huefy::{BulkRecipient, SendBulkEmailsRequest};
 
-let bulk = client.send_bulk_emails(BulkEmailRequest {
-    emails: vec![
-        SendEmailRequest {
-            template_key: "promo".to_string(),
-            recipient: Recipient { email: "bob@example.com".to_string(), name: None },
-            ..Default::default()
+let bulk = client.send_bulk_emails(SendBulkEmailsRequest {
+    template_key: "promo".to_string(),
+    recipients: vec![
+        BulkRecipient {
+            email: "bob@example.com".to_string(),
+            recipient_type: None,
+            data: None,
         },
-        SendEmailRequest {
-            template_key: "promo".to_string(),
-            recipient: Recipient { email: "carol@example.com".to_string(), name: None },
-            ..Default::default()
+        BulkRecipient {
+            email: "carol@example.com".to_string(),
+            recipient_type: None,
+            data: None,
         },
     ],
+    provider_type: None,
 }).await?;
 
-println!("Sent: {}, Failed: {}", bulk.total_sent, bulk.total_failed);
+println!("Sent: {}, Failed: {}", bulk.data.success_count, bulk.data.failure_count);
 ```
 
 ## Error Handling
@@ -107,11 +114,11 @@ println!("Sent: {}, Failed: {}", bulk.total_sent, bulk.total_failed);
 use huefy::HuefyError;
 
 match client.send_email(request).await {
-    Ok(response) => println!("Delivered: {}", response.message_id),
+    Ok(response) => println!("Delivered: {}", response.data.email_id),
     Err(HuefyError::Auth(_)) => eprintln!("Invalid API key"),
-    Err(HuefyError::RateLimit(e)) => eprintln!("Rate limited. Retry after {}s", e.retry_after),
-    Err(HuefyError::CircuitOpen(_)) => eprintln!("Circuit open — service unavailable, backing off"),
-    Err(HuefyError::Network(e)) => eprintln!("Network error: {}", e),
+    Err(HuefyError::RateLimited { retry_after, .. }) => eprintln!("Rate limited. Retry after {:?}s", retry_after),
+    Err(HuefyError::CircuitBreakerOpen { .. }) => eprintln!("Circuit open — service unavailable, backing off"),
+    Err(HuefyError::Network { message, .. }) => eprintln!("Network error: {}", message),
     Err(e) => return Err(e.into()),
 }
 ```
@@ -131,21 +138,21 @@ match client.send_email(request).await {
 
 ```rust
 let health = client.health_check().await?;
-if health.status != "healthy" {
-    eprintln!("Huefy degraded: {}", health.status);
+if health.data.status != "healthy" {
+    eprintln!("Huefy degraded: {}", health.data.status);
 }
 ```
 
 ## Local Development
 
-Set `HUEFY_MODE=local` to point the SDK at a local Huefy server, or override `base_url` in config:
+Set `HUEFY_MODE=local` to target `https://api.huefy.on/api/v1/sdk`, or override `base_url` in config. To bypass Caddy and hit the raw app port directly, set `http://localhost:8080/api/v1/sdk` explicitly:
 
 ```rust
-let client = HuefyEmailClient::new(HuefyConfig {
-    api_key: "sdk_local_key".to_string(),
-    base_url: Some("http://localhost:3000/api/v1/sdk".to_string()),
-    ..Default::default()
-})?;
+let config = HuefyConfig::builder()
+    .api_key("sdk_local_key")
+    .base_url("https://api.huefy.on/api/v1/sdk")
+    .build()?;
+let client = HuefyEmailClient::new(config)?;
 ```
 
 ## Developer Guide

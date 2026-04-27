@@ -133,21 +133,29 @@ fn test_verify_rejects_malformed_signature() {
 #[test]
 fn test_create_request_signature_deterministic() {
     let secret = b"webhook-secret";
-    let sig1 =
-        create_request_signature(secret, "POST", "/api/v1/emails/send", "{\"to\":\"a\"}", 1000)
-            .unwrap();
-    let sig2 =
-        create_request_signature(secret, "POST", "/api/v1/emails/send", "{\"to\":\"a\"}", 1000)
-            .unwrap();
+    let sig1 = create_request_signature(
+        secret,
+        "POST",
+        "/api/v1/emails/send",
+        "{\"to\":\"a\"}",
+        1000,
+    )
+    .unwrap();
+    let sig2 = create_request_signature(
+        secret,
+        "POST",
+        "/api/v1/emails/send",
+        "{\"to\":\"a\"}",
+        1000,
+    )
+    .unwrap();
     assert_eq!(sig1, sig2);
 }
 
 #[test]
 fn test_create_request_signature_varies_with_body() {
     let secret = b"webhook-secret";
-    let sig1 =
-        create_request_signature(secret, "POST", "/path", r#"{"a":1}"#, 1).unwrap();
-    let sig2 =
-        create_request_signature(secret, "POST", "/path", r#"{"b":2}"#, 1).unwrap();
+    let sig1 = create_request_signature(secret, "POST", "/path", r#"{"a":1}"#, 1).unwrap();
+    let sig2 = create_request_signature(secret, "POST", "/path", r#"{"b":2}"#, 1).unwrap();
     assert_ne!(sig1, sig2);
 }

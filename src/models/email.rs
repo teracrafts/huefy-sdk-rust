@@ -1,4 +1,6 @@
+use serde::ser::{SerializeMap, Serializer};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Supported email providers for the Huefy API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -30,7 +32,7 @@ pub struct SendEmailRequest {
     pub template_key: String,
 
     /// Template data variables to merge into the email.
-    pub data: std::collections::HashMap<String, String>,
+    pub data: HashMap<String, serde_json::Value>,
 
     /// The recipient email address.
     pub recipient: String,
@@ -38,6 +40,79 @@ pub struct SendEmailRequest {
     /// The email provider to use. Defaults to SES if not specified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_type: Option<EmailProvider>,
+}
+
+/// Expanded recipient object supported by the send email API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendEmailRecipient {
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipient_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+/// Request to send a single email with the expanded recipient object.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendEmailRecipientRequest {
+    pub template_key: String,
+    pub data: HashMap<String, serde_json::Value>,
+    pub recipient: SendEmailRecipient,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_type: Option<EmailProvider>,
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct SendEmailApiRequest {
+    pub template_key: String,
+    pub data: HashMap<String, serde_json::Value>,
+    pub recipient: SendEmailApiRecipient,
+    pub provider_type: Option<EmailProvider>,
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub enum SendEmailApiRecipient {
+    Email(String),
+    Object(SendEmailRecipient),
+}
+
+impl Serialize for SendEmailApiRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("templateKey", &self.template_key)?;
+        map.serialize_entry("data", &self.data)?;
+        match &self.recipient {
+            SendEmailApiRecipient::Email(email) => map.serialize_entry("recipient", email)?,
+            SendEmailApiRecipient::Object(recipient) => {
+                #[derive(Serialize)]
+                struct RecipientPayload<'a> {
+                    email: &'a str,
+                    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+                    recipient_type: Option<&'a str>,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    data: Option<&'a serde_json::Value>,
+                }
+
+                let payload = RecipientPayload {
+                    email: &recipient.email,
+                    recipient_type: recipient.recipient_type.as_deref(),
+                    data: recipient.data.as_ref(),
+                };
+                map.serialize_entry("recipient", &payload)?;
+            }
+        }
+        if let Some(provider_type) = self.provider_type {
+            map.serialize_entry("providerType", &provider_type)?;
+        }
+        map.end()
+    }
 }
 
 /// Per-recipient status within a send-email or bulk response.

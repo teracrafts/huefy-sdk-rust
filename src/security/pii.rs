@@ -23,10 +23,7 @@ static PII_VALUE_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(
             Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap(),
             "email address",
         ),
-        (
-            Regex::new(r"\b\d{3}[-.]?\d{2}[-.]?\d{4}\b").unwrap(),
-            "SSN",
-        ),
+        (Regex::new(r"\b\d{3}[-.]?\d{2}[-.]?\d{4}\b").unwrap(), "SSN"),
         (
             Regex::new(r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b").unwrap(),
             "credit card number",

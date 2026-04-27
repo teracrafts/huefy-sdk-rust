@@ -1,6 +1,6 @@
 use crate::errors::{ErrorCode, HuefyError};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 /// Parsed rate-limit header values from an API response.
 #[derive(Debug, Clone)]
@@ -262,10 +262,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = HuefyConfig::builder()
-            .api_key("test-key")
-            .build()
-            .unwrap();
+        let config = HuefyConfig::builder().api_key("test-key").build().unwrap();
 
         assert_eq!(config.api_key, "test-key");
         assert_eq!(config.base_url, "https://api.huefy.dev/api/v1/sdk");

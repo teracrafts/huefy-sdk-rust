@@ -86,13 +86,13 @@ mod tests {
     #[test]
     fn test_create_request_signature() {
         let secret = b"webhook-secret";
-        let sig = create_request_signature(secret, "POST", "/api/v1/data", "{}", 1700000000)
-            .unwrap();
+        let sig =
+            create_request_signature(secret, "POST", "/api/v1/data", "{}", 1700000000).unwrap();
         assert!(!sig.is_empty());
 
         // Verify it is deterministic
-        let sig2 = create_request_signature(secret, "POST", "/api/v1/data", "{}", 1700000000)
-            .unwrap();
+        let sig2 =
+            create_request_signature(secret, "POST", "/api/v1/data", "{}", 1700000000).unwrap();
         assert_eq!(sig, sig2);
     }
 

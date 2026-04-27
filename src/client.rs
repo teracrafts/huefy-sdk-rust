@@ -61,9 +61,7 @@ mod tests {
 
     #[test]
     fn test_client_requires_api_key() {
-        let result = HuefyConfig::builder()
-            .api_key("")
-            .build();
+        let result = HuefyConfig::builder().api_key("").build();
         assert!(result.is_err());
     }
 }

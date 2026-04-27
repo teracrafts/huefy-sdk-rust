@@ -17,10 +17,7 @@ pub enum HuefyError {
 
     /// Authentication failure (invalid or expired API key).
     #[error("[{code}] Authentication error: {message}")]
-    Auth {
-        message: String,
-        code: ErrorCode,
-    },
+    Auth { message: String, code: ErrorCode },
 
     /// The request timed out before a response was received.
     #[error("[{code}] Timeout error: {message}")]
@@ -59,10 +56,7 @@ pub enum HuefyError {
 
     /// The circuit breaker is open and rejecting requests.
     #[error("[{code}] Circuit breaker open: {message}")]
-    CircuitBreakerOpen {
-        message: String,
-        code: ErrorCode,
-    },
+    CircuitBreakerOpen { message: String, code: ErrorCode },
 
     /// An unexpected or unknown error.
     #[error("[{code}] Unknown error: {message}")]
@@ -112,7 +106,11 @@ impl HuefyError {
     /// Returns a new error with the message sanitized (secrets redacted).
     pub fn sanitized(self) -> Self {
         match self {
-            Self::Network { message, code, source } => Self::Network {
+            Self::Network {
+                message,
+                code,
+                source,
+            } => Self::Network {
                 message: sanitize_error_message(&message),
                 code,
                 source,
@@ -121,23 +119,41 @@ impl HuefyError {
                 message: sanitize_error_message(&message),
                 code,
             },
-            Self::Timeout { message, code, source } => Self::Timeout {
+            Self::Timeout {
+                message,
+                code,
+                source,
+            } => Self::Timeout {
                 message: sanitize_error_message(&message),
                 code,
                 source,
             },
-            Self::Validation { message, code, field } => Self::Validation {
+            Self::Validation {
+                message,
+                code,
+                field,
+            } => Self::Validation {
                 message: sanitize_error_message(&message),
                 code,
                 field,
             },
-            Self::RateLimited { message, code, retry_after, request_id } => Self::RateLimited {
+            Self::RateLimited {
+                message,
+                code,
+                retry_after,
+                request_id,
+            } => Self::RateLimited {
                 message: sanitize_error_message(&message),
                 code,
                 retry_after,
                 request_id,
             },
-            Self::Server { message, code, status_code, request_id } => Self::Server {
+            Self::Server {
+                message,
+                code,
+                status_code,
+                request_id,
+            } => Self::Server {
                 message: sanitize_error_message(&message),
                 code,
                 status_code,
@@ -147,7 +163,11 @@ impl HuefyError {
                 message: sanitize_error_message(&message),
                 code,
             },
-            Self::Unknown { message, code, source } => Self::Unknown {
+            Self::Unknown {
+                message,
+                code,
+                source,
+            } => Self::Unknown {
                 message: sanitize_error_message(&message),
                 code,
                 source,

@@ -81,9 +81,8 @@ impl CircuitBreaker {
             match state {
                 CircuitState::Open => {
                     return Err(HuefyError::CircuitBreakerOpen {
-                        message:
-                            "Circuit breaker is open -- requests are temporarily blocked"
-                                .to_string(),
+                        message: "Circuit breaker is open -- requests are temporarily blocked"
+                            .to_string(),
                         code: ErrorCode::CircuitBreakerOpen,
                     });
                 }

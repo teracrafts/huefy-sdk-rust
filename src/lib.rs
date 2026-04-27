@@ -4,7 +4,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust
+//! ```rust,no_run
 //! use huefy::HuefyClient;
 //! use huefy::HuefyConfig;
 //!
@@ -34,11 +34,11 @@ pub mod validators;
 
 // Re-exports for convenience
 pub use client::HuefyClient;
-pub use config::{HuefyConfig, RetryConfig, CircuitBreakerConfig};
+pub use config::{CircuitBreakerConfig, HuefyConfig, RetryConfig};
 pub use email_client::HuefyEmailClient;
-pub use errors::{HuefyError, ErrorCode};
+pub use errors::{ErrorCode, HuefyError};
 pub use models::email::{
     BulkRecipient, EmailProvider, HealthResponse, HealthResponseData, RecipientStatus,
-    SendBulkEmailsRequest, SendBulkEmailsResponse, SendBulkEmailsResponseData, SendEmailRequest,
-    SendEmailResponse, SendEmailResponseData,
+    SendBulkEmailsRequest, SendBulkEmailsResponse, SendBulkEmailsResponseData, SendEmailRecipient,
+    SendEmailRecipientRequest, SendEmailRequest, SendEmailResponse, SendEmailResponseData,
 };

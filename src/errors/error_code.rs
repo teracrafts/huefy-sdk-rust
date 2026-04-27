@@ -88,6 +88,9 @@ mod tests {
     #[test]
     fn test_display() {
         assert_eq!(ErrorCode::Network.to_string(), "NETWORK_ERROR");
-        assert_eq!(ErrorCode::CircuitBreakerOpen.to_string(), "CIRCUIT_BREAKER_OPEN");
+        assert_eq!(
+            ErrorCode::CircuitBreakerOpen.to_string(),
+            "CIRCUIT_BREAKER_OPEN"
+        );
     }
 }

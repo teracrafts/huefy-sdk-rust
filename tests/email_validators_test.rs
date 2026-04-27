@@ -1,9 +1,12 @@
+use serde_json::json;
 use std::collections::HashMap;
 
 use huefy::validators::email::{
-    validate_bulk_count, validate_email, validate_email_data, validate_send_email_input,
-    validate_template_key, MAX_BULK_EMAILS, MAX_EMAIL_LENGTH, MAX_TEMPLATE_KEY_LENGTH,
+    validate_bulk_count, validate_email, validate_email_data, validate_recipient,
+    validate_send_email_input, validate_template_key, MAX_BULK_EMAILS, MAX_EMAIL_LENGTH,
+    MAX_TEMPLATE_KEY_LENGTH,
 };
+use huefy::SendEmailRecipient;
 
 #[test]
 fn test_validate_email_valid() {
@@ -69,7 +72,7 @@ fn test_validate_template_key_at_max() {
 
 #[test]
 fn test_validate_email_data_valid() {
-    let data = HashMap::from([("name".to_string(), "John".to_string())]);
+    let data = HashMap::from([("name".to_string(), json!("John"))]);
     assert!(validate_email_data(Some(&data)).is_ok());
 }
 
@@ -105,20 +108,52 @@ fn test_validate_bulk_count_over_limit() {
 
 #[test]
 fn test_validate_send_email_input_valid() {
-    let data = HashMap::from([("name".to_string(), "John".to_string())]);
-    let errors = validate_send_email_input("welcome", Some(&data), "user@test.com");
+    let data = HashMap::from([("name".to_string(), json!("John"))]);
+    let errors = validate_send_email_input("welcome", Some(&data), "user@test.com", None);
     assert!(errors.is_empty());
 }
 
 #[test]
 fn test_validate_send_email_input_all_invalid() {
-    let errors = validate_send_email_input("", None, "bad");
+    let errors = validate_send_email_input("", None, "bad", None);
     assert!(errors.len() >= 3);
 }
 
 #[test]
 fn test_validate_send_email_input_partial_invalid() {
-    let data = HashMap::from([("name".to_string(), "John".to_string())]);
-    let errors = validate_send_email_input("welcome", Some(&data), "bad");
+    let data = HashMap::from([("name".to_string(), json!("John"))]);
+    let errors = validate_send_email_input("welcome", Some(&data), "bad", None);
     assert_eq!(errors.len(), 1);
+}
+
+#[test]
+fn test_validate_recipient_object_valid() {
+    let recipient = SendEmailRecipient {
+        email: "user@test.com".to_string(),
+        recipient_type: Some("cc".to_string()),
+        data: Some(json!({ "locale": "en" })),
+    };
+    assert!(validate_recipient(&recipient).is_ok());
+}
+
+#[test]
+fn test_validate_recipient_object_invalid() {
+    let recipient = SendEmailRecipient {
+        email: "bad".to_string(),
+        recipient_type: None,
+        data: None,
+    };
+    assert!(validate_recipient(&recipient).is_err());
+}
+
+#[test]
+fn test_validate_recipient_object_invalid_type() {
+    let recipient = SendEmailRecipient {
+        email: "user@test.com".to_string(),
+        recipient_type: Some("reply-to".to_string()),
+        data: Some(json!({ "locale": "en" })),
+    };
+    let result = validate_recipient(&recipient);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("recipient type"));
 }

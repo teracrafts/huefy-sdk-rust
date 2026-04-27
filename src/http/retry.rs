@@ -70,11 +70,7 @@ pub fn calculate_delay(attempt: u32) -> Duration {
 /// Supports both delta-seconds (`120`) and HTTP-date formats (only the
 /// delta-seconds variant is implemented here; dates fall through to `None`).
 pub fn parse_retry_after(value: &str) -> Option<Duration> {
-    value
-        .trim()
-        .parse::<u64>()
-        .ok()
-        .map(Duration::from_secs)
+    value.trim().parse::<u64>().ok().map(Duration::from_secs)
 }
 
 #[cfg(test)]
