@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::models::email::SendEmailRecipient;
+use crate::models::email::{BulkRecipient, SendEmailRecipient};
 
 /// Maximum allowed email address length.
 pub const MAX_EMAIL_LENGTH: usize = 254;
@@ -70,6 +70,22 @@ pub fn validate_template_key(key: &str) -> Result<(), String> {
         ));
     }
 
+    Ok(())
+}
+
+pub fn validate_bulk_recipient(recipient: &BulkRecipient) -> Result<(), String> {
+    validate_email(&recipient.email)?;
+    if let Some(recipient_type) = recipient.recipient_type.as_deref() {
+        let normalized = recipient_type.trim().to_lowercase();
+        if !normalized.is_empty() && normalized != "to" && normalized != "cc" && normalized != "bcc" {
+            return Err("recipient type must be one of: to, cc, bcc".to_string());
+        }
+    }
+    if let Some(data) = recipient.data.as_ref() {
+        if !data.is_object() {
+            return Err("recipient data must be an object".to_string());
+        }
+    }
     Ok(())
 }
 

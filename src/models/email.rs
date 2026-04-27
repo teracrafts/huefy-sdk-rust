@@ -136,6 +136,10 @@ pub struct SendEmailResponseData {
     pub email_id: String,
     pub status: String,
     pub recipients: Vec<RecipientStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sent_at: Option<String>,
 }
 
 /// Response from the send email endpoint.
@@ -179,12 +183,26 @@ pub struct SendBulkEmailsResponseData {
     pub batch_id: String,
     pub status: String,
     pub template_key: String,
+    #[serde(default)]
+    pub template_version: i32,
+    #[serde(default)]
+    pub sender_used: String,
+    #[serde(default)]
+    pub sender_verified: bool,
     pub total_recipients: i32,
+    #[serde(default)]
+    pub processed_count: i32,
     pub success_count: i32,
     pub failure_count: i32,
     pub suppressed_count: i32,
     pub started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
     pub recipients: Vec<RecipientStatus>,
+    #[serde(default)]
+    pub errors: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 /// Response from the send-bulk-emails endpoint.

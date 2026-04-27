@@ -2,11 +2,11 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use huefy::validators::email::{
-    validate_bulk_count, validate_email, validate_email_data, validate_recipient,
+    validate_bulk_count, validate_bulk_recipient, validate_email, validate_email_data, validate_recipient,
     validate_send_email_input, validate_template_key, MAX_BULK_EMAILS, MAX_EMAIL_LENGTH,
     MAX_TEMPLATE_KEY_LENGTH,
 };
-use huefy::SendEmailRecipient;
+use huefy::{BulkRecipient, SendBulkEmailsResponse, SendEmailRecipient, SendEmailResponse};
 
 #[test]
 fn test_validate_email_valid() {
@@ -156,4 +156,70 @@ fn test_validate_recipient_object_invalid_type() {
     let result = validate_recipient(&recipient);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("recipient type"));
+}
+
+#[test]
+fn test_validate_bulk_recipient_invalid_type() {
+    let recipient = BulkRecipient {
+        email: "user@test.com".to_string(),
+        recipient_type: Some("reply-to".to_string()),
+        data: Some(json!({ "locale": "en" })),
+    };
+    let result = validate_bulk_recipient(&recipient);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("recipient type"));
+}
+
+#[test]
+fn test_send_email_response_decodes_optional_timestamps() {
+    let response: SendEmailResponse = serde_json::from_value(json!({
+        "success": true,
+        "correlationId": "corr-123",
+        "data": {
+            "emailId": "email-1",
+            "status": "queued",
+            "scheduledAt": "2026-04-27T18:00:00Z",
+            "sentAt": "2026-04-27T18:01:00Z",
+            "recipients": [{"email": "user@example.com", "status": "queued"}]
+        }
+    }))
+    .expect("response should deserialize");
+
+    assert_eq!(response.data.scheduled_at.as_deref(), Some("2026-04-27T18:00:00Z"));
+    assert_eq!(response.data.sent_at.as_deref(), Some("2026-04-27T18:01:00Z"));
+}
+
+#[test]
+fn test_bulk_response_decodes_extended_fields() {
+    let response: SendBulkEmailsResponse = serde_json::from_value(json!({
+        "success": true,
+        "correlationId": "corr-456",
+        "data": {
+            "batchId": "batch-1",
+            "status": "completed",
+            "templateKey": "welcome",
+            "templateVersion": 3,
+            "senderUsed": "ses",
+            "senderVerified": true,
+            "totalRecipients": 1,
+            "processedCount": 1,
+            "successCount": 1,
+            "failureCount": 0,
+            "suppressedCount": 0,
+            "startedAt": "2026-04-27T18:00:00Z",
+            "completedAt": "2026-04-27T18:02:00Z",
+            "recipients": [{"email": "user@example.com", "status": "sent"}],
+            "errors": [{"code": "none"}],
+            "metadata": {"campaign": "spring"}
+        }
+    }))
+    .expect("bulk response should deserialize");
+
+    assert_eq!(response.data.template_version, 3);
+    assert_eq!(response.data.sender_used, "ses");
+    assert!(response.data.sender_verified);
+    assert_eq!(response.data.processed_count, 1);
+    assert_eq!(response.data.completed_at.as_deref(), Some("2026-04-27T18:02:00Z"));
+    assert_eq!(response.data.errors.len(), 1);
+    assert!(response.data.metadata.is_some());
 }

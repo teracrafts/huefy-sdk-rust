@@ -6,7 +6,10 @@ use crate::models::email::{
     SendEmailApiRequest, SendEmailRecipientRequest, SendEmailRequest, SendEmailResponse,
 };
 use crate::security::pii::detect_potential_pii;
-use crate::validators::email::{validate_bulk_count, validate_email, validate_send_email_input};
+use crate::validators::email::{
+    validate_bulk_count, validate_bulk_recipient, validate_send_email_input,
+    validate_template_key,
+};
 
 /// Email-focused client for the Huefy SDK.
 ///
@@ -275,17 +278,45 @@ impl HuefyEmailClient {
             field: None,
         })?;
 
-        for (i, r) in request.recipients.iter().enumerate() {
-            validate_email(&r.email).map_err(|msg| HuefyError::Validation {
-                message: format!("recipients[{}]: {}", i, msg),
-                code: crate::errors::ErrorCode::Validation,
-                field: None,
-            })?;
-        }
+        validate_template_key(&request.template_key).map_err(|msg| HuefyError::Validation {
+            message: msg,
+            code: crate::errors::ErrorCode::Validation,
+            field: None,
+        })?;
+
+        let normalized_recipients = request
+            .recipients
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                validate_bulk_recipient(r).map_err(|msg| HuefyError::Validation {
+                    message: format!("recipients[{}]: {}", i, msg),
+                    code: crate::errors::ErrorCode::Validation,
+                    field: None,
+                })?;
+
+                Ok(crate::models::email::BulkRecipient {
+                    email: r.email.trim().to_string(),
+                    recipient_type: r
+                        .recipient_type
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(|value| value.to_lowercase()),
+                    data: r.data.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, HuefyError>>()?;
+
+        let normalized_request = SendBulkEmailsRequest {
+            template_key: request.template_key.trim().to_string(),
+            recipients: normalized_recipients,
+            provider_type: request.provider_type,
+        };
 
         let response: SendBulkEmailsResponse = self
             .http
-            .request("POST", Self::EMAILS_SEND_BULK_PATH, Some(&request))
+            .request("POST", Self::EMAILS_SEND_BULK_PATH, Some(&normalized_request))
             .await?;
 
         Ok(response)
