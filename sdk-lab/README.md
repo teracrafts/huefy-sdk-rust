@@ -1,22 +1,26 @@
 # Huefy Rust SDK Lab
 
-A verification runner for the Huefy Rust SDK implemented as a Cargo example.
-
-## Scenarios
-
-1. **Initialization** — create client with a dummy key, verify no error
-2. **Config validation** — empty API key returns an error
-3. **HMAC signing** — sign payload with HMAC-SHA256, verify 64-char hex result
-4. **Error sanitization** — email redacted from error messages
-5. **PII detection** — email and SSN fields detected in field list
-6. **Circuit breaker state** — new circuit breaker starts in Closed state
-7. **Health check** — invoke `GET /health` against the configured base URL
-8. **Cleanup** — close client gracefully
+Verifies the core email contract through the real Rust email client against a local stub server.
 
 ## Run
-
-From `sdks/rust/`:
 
 ```bash
 cargo run --example sdk-lab
 ```
+
+from `sdks/rust/`.
+
+## Scenarios
+
+1. Initialization
+2. Single-send contract shaping
+3. Bulk-send contract shaping
+4. Validation rejection for invalid single input
+5. Validation rejection for invalid bulk input
+6. SDK health path behavior
+7. Cleanup
+
+## Notes
+
+- The lab uses a loopback stub server rather than the live API.
+- It verifies request normalization, parsed responses, and validation boundaries.
