@@ -1,6 +1,6 @@
 use crate::config::HuefyConfig;
 use crate::errors::HuefyError;
-use crate::http::client::HttpClient;
+use crate::http::client::{HttpClient, HttpResponder};
 use crate::models::email::{
     HealthResponse, SendBulkEmailsRequest, SendBulkEmailsResponse, SendEmailApiRecipient,
     SendEmailApiRequest, SendEmailRecipientRequest, SendEmailRequest, SendEmailResponse,
@@ -147,6 +147,24 @@ impl HuefyEmailClient {
         }
 
         let http = HttpClient::new(&config)?;
+
+        Ok(Self { http, config })
+    }
+
+    /// Creates a new `HuefyEmailClient` backed by a custom in-process responder.
+    pub fn new_with_responder(
+        config: HuefyConfig,
+        responder: HttpResponder,
+    ) -> Result<Self, HuefyError> {
+        if config.api_key.is_empty() {
+            return Err(HuefyError::Validation {
+                message: "API key is required".to_string(),
+                code: crate::errors::ErrorCode::Validation,
+                field: Some("api_key".to_string()),
+            });
+        }
+
+        let http = HttpClient::with_responder(&config, responder)?;
 
         Ok(Self { http, config })
     }

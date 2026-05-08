@@ -6,9 +6,28 @@ use crate::utils::version::SDK_VERSION;
 
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, RETRY_AFTER, USER_AGENT};
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use serde::Serialize;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
+
+pub struct TransportRequest {
+    pub method: String,
+    pub path: String,
+    pub headers: HeaderMap,
+    pub body: Option<Value>,
+}
+
+pub struct TransportResponse {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: String,
+}
+
+pub type TransportFuture = Pin<Box<dyn Future<Output = Result<TransportResponse, HuefyError>> + Send>>;
+pub type HttpResponder = Arc<dyn Fn(TransportRequest) -> TransportFuture + Send + Sync>;
 
 /// HTTP client that wraps `reqwest` with retry logic, circuit breaking, and
 /// automatic key-rotation header injection.
@@ -21,6 +40,7 @@ pub struct HttpClient {
     enable_error_sanitization: bool,
     on_rate_limit_update: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
     on_rate_limit_warning: Option<Arc<dyn Fn(&RateLimitInfo) + Send + Sync>>,
+    responder: Option<HttpResponder>,
 }
 
 impl HttpClient {
@@ -59,7 +79,14 @@ impl HttpClient {
             enable_error_sanitization: config.enable_error_sanitization,
             on_rate_limit_update: config.on_rate_limit_update.clone(),
             on_rate_limit_warning: config.on_rate_limit_warning.clone(),
+            responder: None,
         })
+    }
+
+    pub fn with_responder(config: &HuefyConfig, responder: HttpResponder) -> Result<Self, HuefyError> {
+        let mut client = Self::new(config)?;
+        client.responder = Some(responder);
+        Ok(client)
     }
 
     /// Sends an HTTP request with retry and circuit breaker protection.
@@ -96,6 +123,7 @@ impl HttpClient {
         let sanitize = self.enable_error_sanitization;
         let on_rate_limit_update = self.on_rate_limit_update.clone();
         let on_rate_limit_warning = self.on_rate_limit_warning.clone();
+        let responder = self.responder.clone();
 
         with_retry(self.max_retries, move || {
             let url = url.clone();
@@ -106,6 +134,7 @@ impl HttpClient {
             let body_json = body_json.clone();
             let on_rate_limit_update = on_rate_limit_update.clone();
             let on_rate_limit_warning = on_rate_limit_warning.clone();
+            let responder = responder.clone();
 
             async move {
                 cb.execute(|| async {
@@ -120,74 +149,103 @@ impl HttpClient {
                     let mut request = client.request(req_method, &url);
                     request = request.header("X-API-Key", &api_key);
 
+                    let mut transport_headers = HeaderMap::new();
+                    transport_headers.insert("X-API-Key", HeaderValue::from_str(&api_key).unwrap_or_else(|_| HeaderValue::from_static("")));
+                    transport_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                    transport_headers.insert(
+                        USER_AGENT,
+                        HeaderValue::from_str(&format!("huefy-rust/{}", SDK_VERSION))
+                            .unwrap_or_else(|_| HeaderValue::from_static("huefy-rust")),
+                    );
+
                     if let Some(ref json) = body_json {
                         request = request.json(json);
                     }
 
-                    let response = request.send().await.map_err(|e| {
-                        let err = HuefyError::from_reqwest(e);
-                        if sanitize {
-                            err.sanitized()
-                        } else {
-                            err
-                        }
-                    })?;
-                    let status = response.status().as_u16();
-
-                    if status >= 400 {
-                        // Extract Retry-After header before consuming the body
-                        let retry_after_secs = response
-                            .headers()
-                            .get(RETRY_AFTER)
-                            .and_then(|v| v.to_str().ok())
-                            .and_then(|v| parse_retry_after(v))
-                            .map(|d| d.as_secs());
-
-                        let request_id = response
-                            .headers()
-                            .get("x-request-id")
-                            .and_then(|v| v.to_str().ok())
-                            .map(String::from);
-
-                        let body_text = response.text().await.unwrap_or_else(|_| String::from(""));
-
-                        let err = HuefyError::from_status_with_retry_after(
-                            status,
-                            &body_text,
-                            retry_after_secs,
-                            request_id,
+                    if let Some(responder) = responder.clone() {
+                        let response = responder(TransportRequest {
+                            method: method_clone.clone(),
+                            path: path.to_string(),
+                            headers: transport_headers.clone(),
+                            body: body_json.clone(),
+                        }).await?;
+                        return parse_transport_response(
+                            response,
+                            sanitize,
+                            on_rate_limit_update.as_deref(),
+                            on_rate_limit_warning.as_deref(),
                         );
-                        return Err(if sanitize { err.sanitized() } else { err });
                     }
 
-                    let headers = response.headers().clone();
-
-                    let parsed: T = response.json().await.map_err(|e| {
-                        let err = HuefyError::Network {
-                            message: format!("Failed to parse response: {}", e),
-                            code: crate::errors::ErrorCode::Network,
-                            source: Some(Box::new(e)),
-                        };
-                        if sanitize {
-                            err.sanitized()
-                        } else {
-                            err
-                        }
+                    let response = request.send().await.map_err(|e| {
+                        let err = HuefyError::from_reqwest(e);
+                        if sanitize { err.sanitized() } else { err }
                     })?;
+                    let status = response.status().as_u16();
+                    let headers = response.headers().clone();
+                    let body_text = response.text().await.unwrap_or_else(|_| String::from(""));
 
-                    parse_rate_limit_headers(
-                        &headers,
+                    parse_transport_response(
+                        TransportResponse {
+                            status,
+                            headers,
+                            body: body_text,
+                        },
+                        sanitize,
                         on_rate_limit_update.as_deref(),
                         on_rate_limit_warning.as_deref(),
-                    );
-
-                    Ok(parsed)
+                    )
                 })
                 .await
             }
         })
         .await
     }
+}
+
+fn parse_transport_response<T>(
+    response: TransportResponse,
+    sanitize: bool,
+    on_update: Option<&(dyn Fn(&RateLimitInfo) + Send + Sync)>,
+    on_warning: Option<&(dyn Fn(&RateLimitInfo) + Send + Sync)>,
+) -> Result<T, HuefyError>
+where
+    T: DeserializeOwned,
+{
+    if response.status >= 400 {
+        let retry_after_secs = response
+            .headers
+            .get(RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| parse_retry_after(v))
+            .map(|d| d.as_secs());
+
+        let request_id = response
+            .headers
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+
+        let err = HuefyError::from_status_with_retry_after(
+            response.status,
+            &response.body,
+            retry_after_secs,
+            request_id,
+        );
+        return Err(if sanitize { err.sanitized() } else { err });
+    }
+
+    let parsed: T = serde_json::from_str(&response.body).map_err(|e| {
+        let err = HuefyError::Network {
+            message: format!("Failed to parse response: {}", e),
+            code: crate::errors::ErrorCode::Network,
+            source: Some(Box::new(e)),
+        };
+        if sanitize { err.sanitized() } else { err }
+    })?;
+
+    parse_rate_limit_headers(&response.headers, on_update, on_warning);
+    Ok(parsed)
 }
 
 fn parse_rate_limit_headers(
