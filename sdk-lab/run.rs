@@ -6,6 +6,7 @@ use huefy::{
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -152,6 +153,24 @@ async fn main() {
     println!();
 
     let mut r = Results::new();
+
+    if is_live_mode() {
+        run_live_lab(&mut r).await;
+        println!();
+        println!("========================================");
+        println!("Results: {} passed, {} failed", r.passed, r.failed);
+        println!("========================================");
+        println!();
+
+        if r.failed == 0 {
+            println!("All verifications passed!");
+        } else {
+            std::process::exit(1);
+        }
+
+        return;
+    }
+
     let stub = StubTransport::default();
 
     let config = HuefyConfig::builder()
@@ -362,6 +381,156 @@ async fn main() {
     if r.failed > 0 {
         std::process::exit(1);
     }
+}
+
+fn is_live_mode() -> bool {
+    env::var("HUEFY_SDK_LAB_MODE")
+        .map(|value| value.eq_ignore_ascii_case("live"))
+        .unwrap_or(false)
+}
+
+fn require_env(name: &str) -> String {
+    match env::var(name) {
+        Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
+        _ => panic!("{name} is required in live mode"),
+    }
+}
+
+fn resolve_provider() -> Option<EmailProvider> {
+    match env::var("HUEFY_SDK_LIVE_PROVIDER")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "sendgrid" => Some(EmailProvider::Sendgrid),
+        "ses" => Some(EmailProvider::Ses),
+        "mailgun" => Some(EmailProvider::Mailgun),
+        _ => None,
+    }
+}
+
+async fn run_live_lab(r: &mut Results) {
+    let config = HuefyConfig::builder()
+        .api_key(require_env("HUEFY_SDK_LIVE_API_KEY"))
+        .base_url(require_env("HUEFY_SDK_LIVE_BASE_URL"))
+        .timeout(Duration::from_secs(10))
+        .build();
+
+    let client = match config {
+        Ok(cfg) => match HuefyEmailClient::new(cfg) {
+            Ok(c) => {
+                r.pass("Initialization");
+                Some(c)
+            }
+            Err(err) => {
+                r.fail("Initialization", &err.to_string());
+                None
+            }
+        },
+        Err(err) => {
+            r.fail("Initialization", &err.to_string());
+            None
+        }
+    };
+
+    let Some(client) = client else {
+        return;
+    };
+
+    let template_key = require_env("HUEFY_SDK_LIVE_TEMPLATE_KEY");
+    let recipient = require_env("HUEFY_SDK_LIVE_RECIPIENT");
+    let provider = resolve_provider();
+
+    let mut send_data = HashMap::new();
+    send_data.insert("FirstName".to_string(), json!("SDK Live"));
+
+    match client
+        .send_email(SendEmailRecipientRequest {
+            template_key: template_key.clone(),
+            data: send_data,
+            recipient: SendEmailRecipient {
+                email: recipient.clone(),
+                recipient_type: None,
+                data: None,
+            },
+            provider_type: provider.clone(),
+        })
+        .await
+    {
+        Ok(response) if response.success => r.pass("Single-send live behavior"),
+        Ok(_) => r.fail("Single-send live behavior", "expected successful live send"),
+        Err(err) => r.fail("Single-send live behavior", &err.to_string()),
+    }
+
+    match client
+        .send_bulk_emails(SendBulkEmailsRequest {
+            template_key: template_key.clone(),
+            recipients: vec![BulkRecipient {
+                email: recipient.clone(),
+                recipient_type: Some("to".to_string()),
+                data: None,
+            }],
+            provider_type: provider.clone(),
+        })
+        .await
+    {
+        Ok(response) if response.success && response.data.total_recipients >= 1 => {
+            r.pass("Bulk-send live behavior")
+        }
+        Ok(_) => r.fail("Bulk-send live behavior", "expected successful live bulk send"),
+        Err(err) => r.fail("Bulk-send live behavior", &err.to_string()),
+    }
+
+    match client
+        .send_email(SendEmailRecipientRequest {
+            template_key: template_key.clone(),
+            data: HashMap::new(),
+            recipient: SendEmailRecipient {
+                email: "bad-email".to_string(),
+                recipient_type: Some("reply-to".to_string()),
+                data: None,
+            },
+            provider_type: None,
+        })
+        .await
+    {
+        Ok(_) => r.fail(
+            "Validation rejection for invalid single input",
+            "expected validation error",
+        ),
+        Err(_) => r.pass("Validation rejection for invalid single input"),
+    }
+
+    match client
+        .send_bulk_emails(SendBulkEmailsRequest {
+            template_key,
+            recipients: vec![BulkRecipient {
+                email: "bad-email".to_string(),
+                recipient_type: Some("reply-to".to_string()),
+                data: None,
+            }],
+            provider_type: None,
+        })
+        .await
+    {
+        Ok(_) => r.fail(
+            "Validation rejection for invalid bulk input",
+            "expected validation error",
+        ),
+        Err(_) => r.pass("Validation rejection for invalid bulk input"),
+    }
+
+    match client.health_check().await {
+        Ok(response) if response.data.status == "healthy" => r.pass("SDK health path behavior"),
+        Ok(response) => r.fail(
+            "SDK health path behavior",
+            &format!("expected healthy status, got {}", response.data.status),
+        ),
+        Err(err) => r.fail("SDK health path behavior", &err.to_string()),
+    }
+
+    r.pass("Cleanup");
 }
 
 fn print_summary(r: &Results) {
