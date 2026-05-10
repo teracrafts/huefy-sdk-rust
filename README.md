@@ -145,7 +145,7 @@ if health.data.status != "healthy" {
 
 ## Local Development
 
-Set `HUEFY_MODE=local` to target `https://api.huefy.on/api/v1/sdk`, or override `base_url` in config. To bypass Caddy and hit the raw app port directly, set `http://localhost:8080/api/v1/sdk` explicitly:
+Set `HUEFY_MODE=local` to target `https://api.huefy.on/api/v1/sdk`, or override `base_url` in config. To bypass Caddy and hit the raw app port directly, set `http://localhost:3140/api/v1/sdk` explicitly:
 
 ```rust
 let config = HuefyConfig::builder()
