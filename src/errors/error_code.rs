@@ -17,6 +17,8 @@ pub enum ErrorCode {
     NotFound = 3001,
     /// Rate limit exceeded.
     RateLimited = 3002,
+    /// Account or organization quota exhausted.
+    InsufficientQuota = 3003,
     /// Server-side error.
     ServerError = 4000,
     /// Service unavailable (maintenance, overload).
@@ -56,6 +58,7 @@ impl fmt::Display for ErrorCode {
             ErrorCode::Validation => "VALIDATION_ERROR",
             ErrorCode::NotFound => "NOT_FOUND",
             ErrorCode::RateLimited => "RATE_LIMITED",
+            ErrorCode::InsufficientQuota => "INSUFFICIENT_QUOTA",
             ErrorCode::ServerError => "SERVER_ERROR",
             ErrorCode::ServiceUnavailable => "SERVICE_UNAVAILABLE",
             ErrorCode::CircuitBreakerOpen => "CIRCUIT_BREAKER_OPEN",
@@ -83,6 +86,7 @@ mod tests {
         assert!(ErrorCode::RateLimited.is_recoverable());
         assert!(!ErrorCode::Authentication.is_recoverable());
         assert!(!ErrorCode::Validation.is_recoverable());
+        assert!(!ErrorCode::InsufficientQuota.is_recoverable());
     }
 
     #[test]

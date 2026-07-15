@@ -233,6 +233,11 @@ impl HuefyError {
                 code: ErrorCode::Validation,
                 field: None,
             },
+            402 => Self::Unknown {
+                message: format!("Insufficient quota: {}", body),
+                code: ErrorCode::InsufficientQuota,
+                source: None,
+            },
             429 => Self::RateLimited {
                 message: "Rate limit exceeded".to_string(),
                 code: ErrorCode::RateLimited,
@@ -285,6 +290,10 @@ mod tests {
 
         let err = HuefyError::from_status(429, "");
         assert_eq!(err.error_code(), ErrorCode::RateLimited);
+
+        let err = HuefyError::from_status(402, "{\"code\":\"INSUFFICIENT_QUOTA\"}");
+        assert_eq!(err.error_code(), ErrorCode::InsufficientQuota);
+        assert!(!err.is_recoverable());
 
         let err = HuefyError::from_status(503, "down");
         assert_eq!(err.error_code(), ErrorCode::ServiceUnavailable);
