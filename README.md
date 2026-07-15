@@ -116,6 +116,9 @@ use huefy::HuefyError;
 match client.send_email(request).await {
     Ok(response) => println!("Delivered: {}", response.data.email_id),
     Err(HuefyError::Auth(_)) => eprintln!("Invalid API key"),
+    Err(e) if e.error_code() == huefy::ErrorCode::InsufficientQuota => {
+        eprintln!("Quota exhausted. Upgrade or wait for the next billing period")
+    }
     Err(HuefyError::RateLimited { retry_after, .. }) => eprintln!("Rate limited. Retry after {:?}s", retry_after),
     Err(HuefyError::CircuitBreakerOpen { .. }) => eprintln!("Circuit open — service unavailable, backing off"),
     Err(HuefyError::Network { message, .. }) => eprintln!("Network error: {}", message),
@@ -127,12 +130,12 @@ match client.send_email(request).await {
 
 | Variant | Code | Meaning |
 |---------|------|---------|
-| `HuefyError::Init` | 1001 | Client failed to initialise |
-| `HuefyError::Auth` | 1102 | API key rejected |
-| `HuefyError::Network` | 1201 | Upstream request failed |
-| `HuefyError::CircuitOpen` | 1301 | Circuit breaker tripped |
-| `HuefyError::RateLimit` | 2003 | Rate limit exceeded |
-| `HuefyError::TemplateMissing` | 2005 | Template key not found |
+| `HuefyError::Auth` | `AUTHENTICATION_ERROR` | API key rejected |
+| `HuefyError` | `INSUFFICIENT_QUOTA` | Account or organization quota exhausted |
+| `HuefyError::Network` / `HuefyError::Timeout` | `NETWORK_ERROR` / `TIMEOUT_ERROR` | Transport failure |
+| `HuefyError::CircuitBreakerOpen` | `CIRCUIT_BREAKER_OPEN` | Circuit breaker tripped |
+| `HuefyError::RateLimited` | `RATE_LIMITED` | Rate limit exceeded |
+| `HuefyError::Validation` | `VALIDATION_ERROR` | Invalid request input |
 
 ## Health Check
 

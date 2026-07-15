@@ -214,6 +214,14 @@ impl HuefyError {
         retry_after: Option<u64>,
         request_id: Option<String>,
     ) -> Self {
+        if has_insufficient_quota_code(body) {
+            return Self::Unknown {
+                message: format!("Insufficient quota: {}", body),
+                code: ErrorCode::InsufficientQuota,
+                source: None,
+            };
+        }
+
         match status {
             401 => Self::Auth {
                 message: "Invalid or expired API key".to_string(),
@@ -263,6 +271,19 @@ impl HuefyError {
     }
 }
 
+fn has_insufficient_quota_code(body: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("code")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref()
+        == Some("INSUFFICIENT_QUOTA")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,6 +313,10 @@ mod tests {
         assert_eq!(err.error_code(), ErrorCode::RateLimited);
 
         let err = HuefyError::from_status(402, "{\"code\":\"INSUFFICIENT_QUOTA\"}");
+        assert_eq!(err.error_code(), ErrorCode::InsufficientQuota);
+        assert!(!err.is_recoverable());
+
+        let err = HuefyError::from_status(500, "{\"code\":\"INSUFFICIENT_QUOTA\"}");
         assert_eq!(err.error_code(), ErrorCode::InsufficientQuota);
         assert!(!err.is_recoverable());
 
